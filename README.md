@@ -40,3 +40,7 @@ kill -TERM <pid>
 ```
 
 Env: `PORT` (default 18080).
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 Dim Gigov.
