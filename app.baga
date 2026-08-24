@@ -9,6 +9,7 @@ import "std/net/tcp.baga"
 import "std/net/poll.baga"
 import "std/os/os.baga"
 import "std/str/str.baga"
+import "std/json/json_write.baga"
 
 fn SIGTERM() -> i64 { return 15 }
 fn SIGINT() -> i64 { return 2 }
@@ -28,6 +29,29 @@ fn cloud_new() -> CloudState {
     return CloudState { metrics: m, h_req: h_req, h_up: h_up, ready: 1 }
 }
 
+// PORT= from env: 1..65535 else default. parse_int("abc") is 0.
+fn cloud_port(raw: str, def: i64) -> i64 {
+    if raw == "" {
+        return def
+    }
+    let p = parse_int(raw)
+    if p < 1 || p > 65535 {
+        return def
+    }
+    return p
+}
+
+fn cloud_with_trace(r: Response, tr: TraceCtx) -> Response {
+    if tr.ok == 0 {
+        return r
+    }
+    return http_set_header(r, otel_header_name(), otel_format(tr))
+}
+
+fn cloud_json(tr: TraceCtx, status: i64, body: str) -> Response {
+    return cloud_with_trace(http_json_response(status, body), tr)
+}
+
 fn cloud_handle(st: CloudState, req: Request) -> Response !Random !Time {
     met_inc(st.metrics, st.h_req)
     let method = http_method(req)
@@ -35,35 +59,34 @@ fn cloud_handle(st: CloudState, req: Request) -> Response !Random !Time {
     let tr = otel_from_header(http_header(req, otel_header_name()))?
     log_info_trace(concat(concat(method, " "), path), tr.trace_id, tr.span_id)?
 
-    // gRPC unary Hello
     if method == "POST" && grpc_is_method_path(path) == 1 {
-        let mut r = grpc_hello_response(http_body_bytes(req))
-        r = http_set_header(r, otel_header_name(), otel_format(tr))
-        return r
+        return cloud_with_trace(grpc_hello_response(http_body_bytes(req)), tr)
     }
 
     if method == "GET" && path == "/healthz" {
-        return http_json_response(200, "{\"status\":\"ok\"}")
+        return cloud_json(tr, 200, "{\"status\":\"ok\"}")
     }
     if method == "GET" && path == "/readyz" {
         if st.ready == 1 {
-            return http_json_response(200, "{\"ready\":true}")
+            return cloud_json(tr, 200, "{\"ready\":true}")
         }
-        return http_json_response(503, "{\"ready\":false}")
+        return cloud_json(tr, 503, "{\"ready\":false}")
     }
     if method == "GET" && path == "/metrics" {
         let body = met_render(st.metrics)
-        let resp = http_response(200, body)
-        return http_set_header(resp, "Content-Type", "text/plain; version=0.0.4")
+        let mut resp = http_response(200, body)
+        resp = http_set_header(resp, "Content-Type", "text/plain; version=0.0.4")
+        return cloud_with_trace(resp, tr)
     }
     if method == "GET" && (path == "/" || path == "/hello") {
-        let mut body = "{\"service\":\"cloudbaga\",\"msg\":\"Здравей, облак\""
-        body = concat(body, concat(concat(",\"trace_id\":\"", tr.trace_id), "\"}"))
-        let mut r = http_json_response(200, body)
-        r = http_set_header(r, otel_header_name(), otel_format(tr))
-        return r
+        let mut body = "{\"service\":\"cloudbaga\",\"msg\":"
+        body = concat(body, json_escape("Здравей, облак"))
+        body = concat(body, ",\"trace_id\":")
+        body = concat(body, json_escape(tr.trace_id))
+        body = concat(body, "}")
+        return cloud_json(tr, 200, body)
     }
-    return http_json_response(404, "{\"error\":\"not found\"}")
+    return cloud_json(tr, 404, "{\"error\":\"not found\"}")
 }
 
 fn cloud_serve_one(st: CloudState, fd: i64) -> i64 !IO !Net !Random !Time {

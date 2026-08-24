@@ -1,6 +1,6 @@
 # cloudbaga
 
-**12-factor cloud demo** — Track C flagship probe (C1–C4).
+**12-factor cloud demo** — Track C flagship probe (C1–C4). **0.2.0**
 
 This repository is the product. The compiler, `std`, `httpdbaga`,
 `metbaga`, `logbaga`, `otelbaga`, and `pbbaga` stay in the baga
@@ -39,7 +39,10 @@ curl -s localhost:18080/metrics
 kill -TERM <pid>
 ```
 
-Env: `PORT` (default 18080).
+Env: `PORT` (default 18080; invalid/out-of-range values keep the default).
+
+Every response carries `traceparent` when the incoming header parses (or
+a new root is minted). `GET /` JSON `trace_id` is `json_escape`d.
 
 ## License
 

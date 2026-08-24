@@ -1,7 +1,7 @@
 # cloudbaga — plan
 
 Date: 2026-08-05
-Status: **P0 done** (C1–C4)
+Status: **P0 done** (C1–C4) · **0.2.0** trace on all routes + PORT clamp (2026-08-24)
 Goal: K8s-demoable service surface.
 
 ## P0 ✅
@@ -15,4 +15,5 @@ Goal: K8s-demoable service surface.
 
 - Multi-connection (go_bg per conn) while still draining on SIGTERM
 - Histogram metrics + label sets
-- Request-id middleware
+- Request-id middleware — **partial**: `traceparent` on every response;
+  `trace_id` JSON on `/` is escaped.
