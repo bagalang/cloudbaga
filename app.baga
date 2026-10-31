@@ -15,17 +15,18 @@ fn SIGTERM() -> i64 { return 15 }
 fn SIGINT() -> i64 { return 2 }
 
 struct CloudState {
-    metrics: Metrics,
+    metrics: WMet,
     h_req: i64,
     h_up: i64,
     ready: i64
 }
 
 fn cloud_new() -> CloudState {
-    let m = met_new()
-    let h_req = met_counter(m, "http_requests_total", "Total HTTP requests handled")
-    let h_up = met_gauge(m, "process_up", "1 if process is up")
-    met_set(m, h_up, 1)
+    let m = wmet_new()
+    let h_req = wmet_counter(m, "http_requests_total", "Total HTTP requests handled")
+    let h_up = wmet_gauge(m, "process_up", "1 if process is up")
+    wmet_set(m, h_up, 1)
+    wmet_freeze(m)
     return CloudState { metrics: m, h_req: h_req, h_up: h_up, ready: 1 }
 }
 
@@ -53,7 +54,7 @@ fn cloud_json(tr: TraceCtx, status: i64, body: str) -> Response {
 }
 
 fn cloud_handle(st: CloudState, req: Request) -> Response !Random !Time {
-    met_inc(st.metrics, st.h_req)
+    wmet_inc(st.metrics, st.h_req)
     let method = http_method(req)
     let path = http_path_only(req)
     let tr = otel_from_header(http_header(req, otel_header_name()))?
@@ -73,7 +74,7 @@ fn cloud_handle(st: CloudState, req: Request) -> Response !Random !Time {
         return cloud_json(tr, 503, "{\"ready\":false}")
     }
     if method == "GET" && path == "/metrics" {
-        let body = met_render(st.metrics)
+        let body = wmet_render(st.metrics)
         let mut resp = http_response(200, body)
         resp = http_set_header(resp, "Content-Type", "text/plain; version=0.0.4")
         return cloud_with_trace(resp, tr)
@@ -122,7 +123,7 @@ fn cloud_run(port: i64) -> i64 !Net !IO !Par !Time !Random {
             let sig = signal_clear()
             log_warn(concat("shutdown signal ", int_to_str(sig)))?
             st.ready = 0
-            met_set(st.metrics, st.h_up, 0)
+            wmet_set(st.metrics, st.h_up, 0)
             running = 0
         } else {
             let pr = poll_wait(pollfds, 200)?
